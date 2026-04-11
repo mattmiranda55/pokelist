@@ -1,0 +1,1 @@
+import{d as s,o as a,c as r,a as o,B as t}from"./index-Ce0r4Ypb.js";const l={class:"ms-progress-bar"},m=s({__name:"ProgressBar",props:{value:{}},setup(e){return(c,n)=>(a(),r("div",l,[o("div",{class:"ms-progress-fill",style:t({width:`${e.value}%`})},null,4)]))}});export{m as _};
