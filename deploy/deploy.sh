@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /opt/pokelist
-git pull origin main
-docker compose up -d --build
-docker image prune -f
+cd /mnt/ssd/stacks/pokelist
+git fetch origin deploy
+git reset --hard origin/deploy

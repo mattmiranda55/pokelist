@@ -1,7 +1,0 @@
-services:
-  pokelist:
-    build: .
-    container_name: pokelist
-    restart: unless-stopped
-    ports:
-      - "8080:80"
