@@ -1,0 +1,12 @@
+services:
+  webhook:
+    image: almir/webhook
+    container_name: pokelist-webhook
+    restart: unless-stopped
+    volumes:
+      - ./webhook.json:/etc/webhook/hooks.json
+      - /opt/pokelist:/opt/pokelist
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "9000:9000"
+    command: ["-verbose", "-hooks=/etc/webhook/hooks.json", "-hotreload"]

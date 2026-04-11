@@ -1,0 +1,1 @@
+import{d as a,o as t,c as e,n,t as o}from"./index-DnbolFAA.js";const l=a({__name:"StatusBadge",props:{status:{}},setup(s){return(c,r)=>(t(),e("span",{class:n(["status-badge",s.status])},o(s.status==="have"?"HAVE":"NEED"),3))}});export{l as _};

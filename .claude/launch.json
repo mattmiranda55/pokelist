@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "PokeList Dev",
+      "runtimeExecutable": "/Users/matt/.bun/bin/bunx",
+      "runtimeArgs": ["--bun", "vite", "--host", "--port", "5173"],
+      "port": 5173
+    }
+  ]
+}
