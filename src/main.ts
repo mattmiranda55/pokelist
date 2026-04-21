@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import { Capacitor } from '@capacitor/core'
 import App from './App.vue'
 import router from './router'
 import './style.css'
@@ -14,7 +15,7 @@ router.replace(`/${lastTab}`).catch(() => {})
 
 app.mount('#app')
 
-// Register service worker
-if ('serviceWorker' in navigator) {
+// Register service worker (skip on native Capacitor platforms)
+if ('serviceWorker' in navigator && !Capacitor.isNativePlatform()) {
   navigator.serviceWorker.register('/sw.js').catch(() => {})
 }

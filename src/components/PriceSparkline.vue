@@ -1,6 +1,6 @@
 <template>
-  <div class="sparkline-wrap" v-if="values.length >= 2">
-    <svg :viewBox="`0 0 ${w} ${h}`" preserveAspectRatio="none">
+  <div v-if="values.length >= 2" class="mt-0.5">
+    <svg :viewBox="`0 0 ${w} ${h}`" preserveAspectRatio="none" class="block h-6 w-full">
       <polyline
         :points="points"
         fill="none"

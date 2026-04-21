@@ -6,17 +6,23 @@
   "scripts": {
     "dev": "bunx --bun vite",
     "build": "bunx --bun vite build",
-    "preview": "bunx --bun vite preview"
+    "preview": "bunx --bun vite preview",
+    "cap:sync": "bunx cap sync",
+    "cap:build": "bun run build && bunx cap sync"
   },
   "dependencies": {
+    "@capacitor/core": "^8.3.1",
+    "pinia": "^3",
     "vue": "^3.5",
-    "vue-router": "^4",
-    "pinia": "^3"
+    "vue-router": "^4"
   },
   "devDependencies": {
-    "vite": "^6",
+    "@capacitor/cli": "^8.3.1",
+    "@tailwindcss/vite": "^4.2.3",
     "@vitejs/plugin-vue": "^5",
+    "tailwindcss": "^4.2.3",
     "typescript": "^5",
+    "vite": "^6",
     "vue-tsc": "^2"
   }
 }

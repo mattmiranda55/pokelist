@@ -12,7 +12,11 @@
       "Bash(bun -e \"console.log\\(encodeURIComponent\\(''name:\"\"Charizard\"\"''\\)\\)\")",
       "Bash(curl -s \"https://api.pokemontcg.io/v2/cards?q=name%3A%22Charizard%22&pageSize=1\")",
       "Bash(bunx --bun vite build)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(bun add:*)",
+      "Bash(bun remove:*)",
+      "Bash(bun run:*)",
+      "Bash(bunx cap:*)"
     ]
   }
 }

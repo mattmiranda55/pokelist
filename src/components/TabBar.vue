@@ -1,13 +1,16 @@
 <template>
-  <nav class="tab-bar">
+  <nav
+    class="print-hide fixed bottom-0 left-0 right-0 z-[900] flex border-t border-border backdrop-blur-xl"
+    :style="tabBarStyle"
+  >
     <router-link
       v-for="tab in tabs"
       :key="tab.route"
       :to="tab.route"
-      class="tab-bar-btn"
-      :class="{ active: isActive(tab.route) }"
+      class="flex min-h-[44px] flex-1 cursor-pointer select-none flex-col items-center justify-center gap-0.5 py-1.5 text-[0.65rem] font-medium no-underline transition-colors duration-150"
+      :class="isActive(tab.route) ? 'text-accent' : 'text-text-muted'"
     >
-      <svg viewBox="0 0 24 24" v-html="tab.icon"></svg>
+      <svg viewBox="0 0 24 24" class="h-6 w-6 fill-current" v-html="tab.icon"></svg>
       <span>{{ tab.label }}</span>
     </router-link>
   </nav>
@@ -17,6 +20,12 @@
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
+
+const tabBarStyle = {
+  height: 'calc(56px + env(safe-area-inset-bottom))',
+  paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))',
+  background: 'rgba(22,33,62,0.92)',
+}
 
 const tabs = [
   {

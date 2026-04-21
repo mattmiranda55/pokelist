@@ -1,13 +1,23 @@
 <template>
   <div>
-    <header>
-      <h1>PokeList</h1>
-      <div class="subtitle">Track your collection</div>
+    <header
+      class="print-hide bg-gradient-to-b from-accent/10 to-transparent px-4 pt-[1.2rem] pb-[0.8rem] text-center"
+    >
+      <h1
+        class="h-gradient text-[1.5rem] font-extrabold tracking-[-0.02em] max-[500px]:text-[1.25rem]"
+      >
+        PokeList
+      </h1>
+      <div
+        class="mt-[0.15rem] text-[0.7rem] font-medium uppercase tracking-[0.05em] text-text-muted"
+      >
+        Track your collection
+      </div>
     </header>
 
     <ValueChart />
 
-    <div class="search-bar">
+    <div class="print-hide mx-auto mt-2 flex max-w-[600px] gap-2 px-4">
       <input
         type="text"
         v-model="searchTerm"
@@ -16,29 +26,48 @@
         @keydown.enter="doSearch"
         @input="onSearchInput"
         @blur="onSearchBlur"
+        class="min-h-[44px] flex-1 rounded-[10px] border border-border bg-surface px-[0.9rem] py-[0.7rem] text-[0.95rem] text-text shadow-sm transition-all duration-150 focus:border-accent focus:outline-none focus:shadow-[0_0_0_3px_rgba(233,69,96,0.2)]"
       />
-      <button @click="doSearch" :disabled="store.searchLoading">Search</button>
+      <button
+        @click="doSearch"
+        :disabled="store.searchLoading"
+        class="min-h-[44px] whitespace-nowrap rounded-[10px] bg-accent px-[1.2rem] py-[0.7rem] text-[0.9rem] font-semibold text-white shadow-sm transition-all duration-150 hover:bg-accent-hover active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50 disabled:transform-none"
+      >
+        Search
+      </button>
     </div>
 
     <!-- Fuzzy autocomplete from collection -->
-    <div class="col-fuzzy-results" v-if="fuzzyResults.length > 0 && showFuzzy">
-      <div class="fuzzy-result-list">
+    <div
+      v-if="fuzzyResults.length > 0 && showFuzzy"
+      class="mx-auto mt-1 max-w-[600px] px-4"
+    >
+      <div
+        class="max-h-[280px] overflow-y-auto rounded-[10px] border border-border bg-surface shadow-md"
+      >
         <div
           v-for="result in fuzzyResults"
           :key="result.item.id"
-          class="fuzzy-result-item"
+          class="flex cursor-pointer items-center gap-[0.6rem] border-b border-border/40 p-[0.45rem_0.7rem] transition-colors duration-150 last:border-b-0 hover:bg-surface2"
           @click="onFuzzyClick(result.item)"
         >
-          <img :src="result.item.images?.small || ''" :alt="result.item.name" loading="lazy" />
-          <div class="fuzzy-result-info">
-            <div class="fuzzy-result-name">
+          <img
+            :src="result.item.images?.small || ''"
+            :alt="result.item.name"
+            loading="lazy"
+            class="h-11 w-8 flex-shrink-0 rounded-[3px] object-contain"
+          />
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-[0.82rem] font-semibold">
               <template v-for="(seg, i) in getSegments(result)" :key="i">
-                <span v-if="seg.highlighted" class="fuzzy-match-char">{{ seg.text }}</span>
+                <span v-if="seg.highlighted" class="font-bold text-accent">{{ seg.text }}</span>
                 <template v-else>{{ seg.text }}</template>
               </template>
             </div>
-            <div class="fuzzy-result-meta">
-              {{ result.item.set?.name || 'Unknown' }} &middot; {{ result.item.number || '?' }}/{{ result.item.set?.printedTotal || '?' }}
+            <div class="truncate text-[0.68rem] text-text-muted">
+              {{ result.item.set?.name || 'Unknown' }} &middot; {{ result.item.number || '?' }}/{{
+                result.item.set?.printedTotal || '?'
+              }}
             </div>
           </div>
         </div>
@@ -46,21 +75,39 @@
     </div>
 
     <!-- Banners -->
-    <div v-if="store.error" class="banner error">{{ store.error }}</div>
+    <div
+      v-if="store.error"
+      class="animate-banner-in mx-auto my-2 max-w-[600px] rounded-[10px] border border-[rgba(251,187,187,0.15)] bg-[#5c1a1a] px-4 py-[0.65rem] text-center text-[0.82rem] text-[#fbb]"
+    >
+      {{ store.error }}
+    </div>
 
     <!-- Spinner -->
-    <div class="spinner" :class="{ visible: store.loading || store.searchLoading }"></div>
+    <div
+      v-if="store.loading || store.searchLoading"
+      class="spinner block py-12 text-center"
+    ></div>
 
     <!-- Collection section -->
     <div v-if="!store.loading">
-      <div v-if="store.collectionCards.length === 0" class="empty-state">
-        <span class="empty-icon">&#x1F0CF;</span>
+      <div
+        v-if="store.collectionCards.length === 0"
+        class="px-6 py-12 text-center text-[0.9rem] text-text-muted"
+      >
+        <span class="mb-[0.6rem] block text-[2.5rem] opacity-50">&#x1F0CF;</span>
         <div>Your collection is empty</div>
-        <div class="empty-hint">Search for cards below to start adding to your collection</div>
+        <div class="mt-1 text-[0.78rem] opacity-60">
+          Search for cards below to start adding to your collection
+        </div>
       </div>
       <template v-else>
-        <div class="section-header">
-          <span class="section-title">Your Collection ({{ store.collectionCards.length }} cards)</span>
+        <div
+          class="mx-auto mt-3 flex max-w-[1200px] items-center justify-between gap-2 px-4 pb-1"
+        >
+          <span
+            class="text-[0.78rem] font-semibold uppercase tracking-[0.05em] text-text-muted"
+            >Your Collection ({{ store.collectionCards.length }} cards)</span
+          >
         </div>
         <CardGrid>
           <CardTile
@@ -76,9 +123,19 @@
 
     <!-- Search results section -->
     <div v-if="store.searchResults.length > 0">
-      <div class="section-header">
-        <span class="section-title">Search Results ({{ store.searchResults.length }})</span>
-        <button class="btn btn-small btn-surface" @click="clearResults">Clear results</button>
+      <div
+        class="mx-auto mt-3 flex max-w-[1200px] items-center justify-between gap-2 px-4 pb-1"
+      >
+        <span
+          class="text-[0.78rem] font-semibold uppercase tracking-[0.05em] text-text-muted"
+          >Search Results ({{ store.searchResults.length }})</span
+        >
+        <button
+          class="min-h-[34px] whitespace-nowrap rounded-[10px] border border-border bg-surface px-[0.7rem] py-[0.4rem] text-[0.78rem] font-medium text-text shadow-sm transition-colors duration-150 hover:bg-surface2"
+          @click="clearResults"
+        >
+          Clear results
+        </button>
       </div>
       <CardGrid>
         <CardTile
@@ -90,8 +147,11 @@
         />
       </CardGrid>
     </div>
-    <div v-if="searchDone && store.searchResults.length === 0 && !store.searchLoading" class="empty-state">
-      <span class="empty-icon">&#x1F50D;</span>
+    <div
+      v-if="searchDone && store.searchResults.length === 0 && !store.searchLoading"
+      class="px-6 py-12 text-center text-[0.9rem] text-text-muted"
+    >
+      <span class="mb-[0.6rem] block text-[2.5rem] opacity-50">&#x1F50D;</span>
       <div>No cards found</div>
     </div>
   </div>

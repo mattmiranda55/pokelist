@@ -1,5 +1,5 @@
 <template>
-  <div class="fuzzy-dropdown-wrap" ref="wrapRef">
+  <div class="relative flex-1" ref="wrapRef">
     <input
       type="text"
       v-model="query"
@@ -8,28 +8,34 @@
       @focus="showList"
       @input="onInput"
       @keydown="onKeydown"
+      class="min-h-[44px] w-full rounded-[10px] border border-border bg-surface px-[0.9rem] py-[0.7rem] text-[0.9rem] text-text shadow-sm transition-all duration-150 focus:border-accent focus:outline-none focus:shadow-[0_0_0_3px_rgba(233,69,96,0.2)]"
     />
-    <div class="fuzzy-dropdown-list" :class="{ open: isOpen }">
+    <div
+      v-if="isOpen"
+      class="absolute left-0 right-0 top-full z-[100] max-h-[260px] overflow-y-auto rounded-b-[10px] border border-t-0 border-border bg-surface shadow-md"
+    >
       <div
         v-if="filteredItems.length === 0"
-        class="fuzzy-dropdown-empty"
+        class="p-[0.7rem_0.9rem] text-center text-[0.82rem] text-text-muted"
       >
         No results found
       </div>
       <div
         v-for="(result, idx) in filteredItems"
         :key="getKey(result.item)"
-        class="fuzzy-dropdown-item"
-        :class="{ highlighted: idx === highlightIdx }"
+        class="cursor-pointer border-b border-border/40 p-[0.55rem_0.9rem] text-[0.85rem] leading-[1.35] transition-colors duration-150 last:border-b-0 hover:bg-surface2"
+        :class="{ 'bg-surface2': idx === highlightIdx }"
         @click="selectItem(result)"
       >
         <span>
           <template v-for="(seg, si) in getSegments(result)" :key="si">
-            <span v-if="seg.highlighted" class="fuzzy-match-char">{{ seg.text }}</span>
+            <span v-if="seg.highlighted" class="font-bold text-accent">{{ seg.text }}</span>
             <template v-else>{{ seg.text }}</template>
           </template>
         </span>
-        <span v-if="getMeta" class="fuzzy-meta">{{ getMeta(result.item) }}</span>
+        <span v-if="getMeta" class="ml-[0.3rem] text-[0.72rem] text-text-muted">{{
+          getMeta(result.item)
+        }}</span>
       </div>
     </div>
   </div>
@@ -73,7 +79,6 @@ const filteredItems = computed<FuzzyFilterResult<any>[]>(() => {
 
 function getSegments(result: FuzzyFilterResult<any>) {
   const label = props.getLabel(result.item)
-  // Only highlight indices within the label portion
   const labelIndices = result.indices.filter((i) => i < label.length)
   return getHighlightSegments(label, labelIndices)
 }

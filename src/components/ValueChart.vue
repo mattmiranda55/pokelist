@@ -1,12 +1,21 @@
 <template>
-  <div class="value-chart-wrap" v-if="history.length > 0">
-    <div class="value-chart-label">Collection Value</div>
-    <div class="value-chart-header">
-      <span class="value-total">{{ currentFormatted }}</span>
-      <span class="value-change" :class="changeClass">{{ changeText }}</span>
+  <div v-if="history.length > 0" class="print-hide mx-auto max-w-[600px] px-4 pt-3 pb-1">
+    <div
+      class="text-[0.7rem] font-medium uppercase tracking-[0.04em] text-text-muted"
+    >
+      Collection Value
+    </div>
+    <div class="mb-[0.3rem] flex items-baseline gap-2">
+      <span class="text-[1.6rem] font-extrabold tabular-nums text-warning max-[500px]:text-[1.3rem]">{{ currentFormatted }}</span>
+      <span
+        class="rounded-[4px] px-[0.4rem] py-[0.1rem] text-[0.8rem] font-semibold"
+        :class="changeBadgeClass"
+      >
+        {{ changeText }}
+      </span>
     </div>
     <svg
-      class="value-chart-svg"
+      class="block h-20 w-full"
       :viewBox="`0 0 ${w} ${h}`"
       preserveAspectRatio="none"
       v-html="svgContent"
@@ -31,15 +40,15 @@ const currentFormatted = computed(() => {
   return formatPrice(history.value[history.value.length - 1].total) || '$0.00'
 })
 
-const changeClass = computed(() => {
-  if (history.value.length < 2) return 'flat'
+const changeBadgeClass = computed(() => {
+  if (history.value.length < 2) return 'bg-text-muted/10 text-text-muted'
   const first = history.value[0].total
   const current = history.value[history.value.length - 1].total
-  if (first <= 0) return 'flat'
+  if (first <= 0) return 'bg-text-muted/10 text-text-muted'
   const pct = ((current - first) / first) * 100
-  if (pct > 0) return 'up'
-  if (pct < 0) return 'down'
-  return 'flat'
+  if (pct > 0) return 'bg-success/15 text-success'
+  if (pct < 0) return 'bg-accent/15 text-accent'
+  return 'bg-text-muted/10 text-text-muted'
 })
 
 const changeText = computed(() => {
@@ -47,7 +56,7 @@ const changeText = computed(() => {
   const first = history.value[0].total
   const current = history.value[history.value.length - 1].total
   if (first <= 0) return '--'
-  const pct = ((current - first) / first * 100).toFixed(1)
+  const pct = (((current - first) / first) * 100).toFixed(1)
   const sign = parseFloat(pct) >= 0 ? '+' : ''
   return `${sign}${pct}%`
 })
