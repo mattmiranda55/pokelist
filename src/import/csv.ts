@@ -6,9 +6,36 @@ export interface ParsedCsv {
 
 const PRICE_RE = /^\$[\d,]+\.\d{2}$/;
 const VARIANT_RE = /\s+-\s+\[[^\]]+\]\s*$/;
+const VARIANT_CAPTURE_RE = /\s+-\s+\[([^\]]+)\]\s*$/;
+
+const VARIANT_NAME_MAP: Record<string, string> = {
+  'normal': 'normal',
+  'non-holo': 'normal',
+  'non holo': 'normal',
+  'holo': 'holofoil',
+  'holofoil': 'holofoil',
+  'foil': 'holofoil',
+  'reverse': 'reverseHolofoil',
+  'reverse holo': 'reverseHolofoil',
+  'reverse holofoil': 'reverseHolofoil',
+  'reverse foil': 'reverseHolofoil',
+  '1st edition': '1stEdition',
+  '1st edition holo': '1stEditionHolofoil',
+  '1st edition holofoil': '1stEditionHolofoil',
+  'unlimited': 'unlimitedHolofoil',
+  'unlimited holo': 'unlimitedHolofoil',
+  'unlimited holofoil': 'unlimitedHolofoil',
+};
 
 export function stripVariant(name: string): string {
   return name.replace(VARIANT_RE, '').trim();
+}
+
+export function extractVariantFromName(name: string): string {
+  const match = name.match(VARIANT_CAPTURE_RE);
+  if (!match) return 'normal';
+  const key = match[1].trim().toLowerCase();
+  return VARIANT_NAME_MAP[key] ?? 'normal';
 }
 
 export function parseCsv(text: string): ParsedCsv {
@@ -85,6 +112,18 @@ function recordsToRows(records: string[][], headers: string[]): Record<string, s
   });
 }
 
+// Duplicate names would collide in recordsToRows and silently overwrite each other, so a
+// second integer column must not also be called "Quantity".
+function pushUnique(headers: string[], name: string): void {
+  if (!headers.includes(name)) {
+    headers.push(name);
+    return;
+  }
+  let n = 2;
+  while (headers.includes(`${name} ${n}`)) n++;
+  headers.push(`${name} ${n}`);
+}
+
 function synthesizeTcgPlayerHeaders(sampleRow: string[]): string[] {
   // TCGPlayer collection page rows render as:
   //   [Name - [Variant], Game, Set, Quantity, Low, Mid, High]
@@ -94,21 +133,23 @@ function synthesizeTcgPlayerHeaders(sampleRow: string[]): string[] {
   const priceLabels = ['Low Price', 'Mid Price', 'High Price', 'Market Price'];
   for (let i = 0; i < sampleRow.length; i++) {
     const cell = sampleRow[i].trim();
+    // Set is claimed before the all-digits check on purpose: sets like "151" are numeric, and
+    // in TCGPlayer's layout Set always precedes Quantity.
     if (PRICE_RE.test(cell)) {
-      headers.push(priceLabels[priceLabelIdx] ?? `Price ${priceLabelIdx + 1}`);
+      pushUnique(headers, priceLabels[priceLabelIdx] ?? `Price ${priceLabelIdx + 1}`);
       priceLabelIdx++;
-    } else if (/^\d+$/.test(cell)) {
-      headers.push('Quantity');
     } else if (VARIANT_RE.test(cell)) {
-      headers.push('Card Name');
+      pushUnique(headers, 'Card Name');
     } else if (/^(pokemon|magic|yu-?gi-?oh|lorcana)$/i.test(cell)) {
-      headers.push('Game');
+      pushUnique(headers, 'Game');
     } else if (headers.indexOf('Card Name') < 0) {
-      headers.push('Card Name');
+      pushUnique(headers, 'Card Name');
     } else if (headers.indexOf('Set') < 0) {
-      headers.push('Set');
+      pushUnique(headers, 'Set');
+    } else if (/^\d+$/.test(cell)) {
+      pushUnique(headers, 'Quantity');
     } else {
-      headers.push(`Column ${i + 1}`);
+      pushUnique(headers, `Column ${i + 1}`);
     }
   }
   return headers;

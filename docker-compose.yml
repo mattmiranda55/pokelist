@@ -1,0 +1,14 @@
+services:
+  pokelist:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - pokelist-data:/data
+    environment:
+      DATABASE_PATH: /data/pokelist.db
+      # POKEMONTCG_API_KEY: raises the upstream rate ceiling; optional
+    restart: unless-stopped
+
+volumes:
+  pokelist-data:
