@@ -1,25 +1,26 @@
 import { useState } from 'react';
-import { Layers, ListChecks, Search } from 'lucide-react';
+import { Heart, Layers, Search } from 'lucide-react';
 import { Pokeball } from './components/Pokeball';
 import CollectionScreen from './screens/CollectionScreen';
 import SearchScreen from './screens/SearchScreen';
-import MasterSetScreen from './screens/MasterSetScreen';
+import WantsScreen from './screens/WantsScreen';
 
-type Tab = 'collection' | 'search' | 'masterset';
+type Tab = 'collection' | 'search' | 'wants';
 
 const TABS: { id: Tab; label: string; title: string; Icon: typeof Layers }[] = [
   { id: 'collection', label: 'Collection', title: 'POKÉLIST', Icon: Layers },
   { id: 'search', label: 'Search', title: 'POKÉDEX SEARCH', Icon: Search },
-  { id: 'masterset', label: 'Master Set', title: 'MASTER SET', Icon: ListChecks },
+  { id: 'wants', label: 'Wants', title: 'WANT LIST', Icon: Heart },
 ];
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('collection');
   const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
-  // Search reads owned state on mount; bumping this makes it re-read after a collection change.
-  const [collectionVersion, setCollectionVersion] = useState(0);
+  // Screens read owned/wanted state on mount; bumping this makes them re-read after any change.
+  const [dataVersion, setDataVersion] = useState(0);
 
   const active = TABS.find((t) => t.id === tab)!;
+  const changed = () => setDataVersion((v) => v + 1);
 
   return (
     <div className="app">
@@ -34,17 +35,17 @@ export default function App() {
       <main className="main">
         {tab === 'collection' && (
           <CollectionScreen
+            dataVersion={dataVersion}
             onHeaderActions={setHeaderActions}
-            onCollectionChanged={() => setCollectionVersion((v) => v + 1)}
+            onCollectionChanged={changed}
           />
         )}
         {tab === 'search' && (
-          <SearchScreen
-            collectionVersion={collectionVersion}
-            onCollectionChanged={() => setCollectionVersion((v) => v + 1)}
-          />
+          <SearchScreen dataVersion={dataVersion} onCollectionChanged={changed} />
         )}
-        {tab === 'masterset' && <MasterSetScreen collectionVersion={collectionVersion} />}
+        {tab === 'wants' && (
+          <WantsScreen dataVersion={dataVersion} onWantsChanged={changed} />
+        )}
       </main>
 
       <nav className="tabbar">

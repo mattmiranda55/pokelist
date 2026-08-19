@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CreditCard, Layers, Minus, Plus, PlusCircle, Trash2, X } from 'lucide-react';
+import { Award, CreditCard, Layers, Minus, Plus, PlusCircle, Trash2, X } from 'lucide-react';
 import {
   ALL_VARIANT_TYPES,
   getVariantTypesForCard,
   variantLabel,
 } from '../api/pokemonTcg';
+import { GRADING_COMPANIES, gradesForCompany } from '../grading';
 import {
+  addGradedCopy,
   addVariantToCard,
   removeCard,
+  removeGradedCopy,
   removeVariant,
   setVariantQuantity,
   type CollectionCard,
@@ -20,12 +23,9 @@ interface Props {
   onChanged: () => void;
 }
 
-function formatPrice(price: number | null): string {
-  return price === null ? '—' : `$${price.toFixed(2)}`;
-}
-
 export default function CardDetailModal({ card, onClose, onChanged }: Props) {
   const [addPickerOpen, setAddPickerOpen] = useState(false);
+  const [gradedFormOpen, setGradedFormOpen] = useState(false);
   const [cardVariantTypes, setCardVariantTypes] = useState<string[] | null>(null);
 
   // Offer only variants this card actually exists in, not all six generic types.
@@ -59,18 +59,13 @@ export default function CardDetailModal({ card, onClose, onChanged }: Props) {
 
   async function handleRemoveCard() {
     const ok = window.confirm(
-      `Remove from collection?\n\nThis will remove ${card.name} and all of its variants.`
+      `Remove from collection?\n\nThis will remove ${card.name}, all of its variants, and any graded copies.`
     );
     if (!ok) return;
     await removeCard(card.id);
     onChanged();
     onClose();
   }
-
-  const value = card.variants.reduce(
-    (sum, v) => sum + v.quantity * (v.price_usd ?? card.price_usd ?? 0),
-    0
-  );
 
   return (
     <div className="backdrop" onClick={onClose}>
@@ -106,16 +101,16 @@ export default function CardDetailModal({ card, onClose, onChanged }: Props) {
 
           <div className="stats-row">
             <div className="stat-box">
-              <div className="stat-label">LATEST PRICE</div>
-              <div className="v">{formatPrice(card.price_usd)}</div>
-            </div>
-            <div className="stat-box">
               <div className="stat-label">QTY</div>
               <div className="v">{card.total_quantity}</div>
             </div>
             <div className="stat-box">
-              <div className="stat-label">VALUE</div>
-              <div className="v">{formatPrice(value)}</div>
+              <div className="stat-label">VARIANTS</div>
+              <div className="v">{card.variants.length}</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-label">GRADED</div>
+              <div className="v">{card.graded.length}</div>
             </div>
           </div>
 
@@ -132,12 +127,7 @@ export default function CardDetailModal({ card, onClose, onChanged }: Props) {
 
           {card.variants.map((v) => (
             <div className="variant-row" key={v.id}>
-              <div className="variant-label">
-                {variantLabel(v.variant_type)}
-                {v.price_usd != null && (
-                  <div className="variant-price">{formatPrice(v.price_usd)}</div>
-                )}
-              </div>
+              <div className="variant-label">{variantLabel(v.variant_type)}</div>
               <div className="stepper">
                 <button onClick={() => bump(v, -1)} aria-label="Fewer">
                   <Minus size={14} />
@@ -186,11 +176,183 @@ export default function CardDetailModal({ card, onClose, onChanged }: Props) {
             </div>
           )}
 
+          <div className="chart-head" style={{ margin: 0, fontSize: 12 }}>
+            <Award size={14} color="var(--accent)" />
+            GRADED COPIES
+          </div>
+
+          {card.graded.length === 0 && !gradedFormOpen && (
+            <div className="empty" style={{ padding: 'var(--s-md)' }}>
+              No graded copies. Each slab is tracked on its own.
+            </div>
+          )}
+
+          {card.graded.map((g) => (
+            <div className="variant-row" key={g.id}>
+              <div className="variant-label">
+                <span className="slab-grade">
+                  {g.company} {g.grade}
+                </span>
+                <div className="slab-meta">
+                  {[
+                    g.variant_type ? variantLabel(g.variant_type) : 'Variant not recorded',
+                    g.cert_number ? `CERT ${g.cert_number}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
+              </div>
+              <button
+                className="icon-btn"
+                onClick={async () => {
+                  await removeGradedCopy(g.id);
+                  onChanged();
+                }}
+                aria-label={`Remove ${g.company} ${g.grade}`}
+              >
+                <Trash2 size={16} color="var(--danger)" />
+              </button>
+            </div>
+          ))}
+
+          {!gradedFormOpen ? (
+            <button className="btn-dashed" onClick={() => setGradedFormOpen(true)}>
+              <Plus size={14} />
+              ADD GRADED COPY
+            </button>
+          ) : (
+            <GradedForm
+              variantTypes={cardVariantTypes ?? ALL_VARIANT_TYPES}
+              onCancel={() => setGradedFormOpen(false)}
+              onSubmit={async (input) => {
+                await addGradedCopy(card.id, input);
+                setGradedFormOpen(false);
+                onChanged();
+              }}
+            />
+          )}
+
           <button className="btn-danger" onClick={handleRemoveCard}>
             <Trash2 size={16} />
             REMOVE FROM COLLECTION
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+interface GradedFormProps {
+  variantTypes: string[];
+  onCancel: () => void;
+  onSubmit: (input: {
+    variantType: string | null;
+    company: string;
+    grade: string;
+    certNumber: string | null;
+  }) => Promise<void>;
+}
+
+function GradedForm({ variantTypes, onCancel, onSubmit }: GradedFormProps) {
+  const [company, setCompany] = useState(GRADING_COMPANIES[0]);
+  const [grade, setGrade] = useState('10');
+  const [variantType, setVariantType] = useState('');
+  const [certNumber, setCertNumber] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const grades = gradesForCompany(company);
+
+  // Switching companies can strip the designation that was selected (BGS Black Label → PSA).
+  function pickCompany(next: string) {
+    setCompany(next);
+    if (!gradesForCompany(next).includes(grade)) setGrade('10');
+  }
+
+  async function submit() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        variantType: variantType || null,
+        company,
+        grade,
+        certNumber: certNumber.trim() || null,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="picker-box">
+      <span className="label">NEW GRADED COPY</span>
+
+      <label className="field">
+        <span>COMPANY</span>
+        <select
+          className="select"
+          value={company}
+          onChange={(e) => pickCompany(e.target.value)}
+        >
+          {GRADING_COMPANIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="field">
+        <span>GRADE</span>
+        <select
+          className="select"
+          value={grade}
+          onChange={(e) => setGrade(e.target.value)}
+        >
+          {grades.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="field">
+        <span>VARIANT</span>
+        <select
+          className="select"
+          value={variantType}
+          onChange={(e) => setVariantType(e.target.value)}
+        >
+          <option value="">Not recorded</option>
+          {variantTypes.map((t) => (
+            <option key={t} value={t}>
+              {variantLabel(t)}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="field">
+        <span>CERT #</span>
+        <input
+          className="text-input"
+          value={certNumber}
+          onChange={(e) => setCertNumber(e.target.value)}
+          placeholder="Optional"
+          autoCorrect="off"
+          autoCapitalize="none"
+        />
+      </label>
+
+      <div className="sheet-foot" style={{ border: 'none', padding: 0 }}>
+        <button className="btn-secondary" onClick={onCancel} disabled={submitting}>
+          CANCEL
+        </button>
+        <button className="btn-primary" onClick={submit} disabled={submitting}>
+          <Plus size={14} />
+          {submitting ? 'ADDING…' : 'ADD SLAB'}
+        </button>
       </div>
     </div>
   );

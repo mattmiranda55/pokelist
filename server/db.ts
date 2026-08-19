@@ -13,17 +13,6 @@ db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 db.exec(readFileSync(join(import.meta.dir, 'schema.sql'), 'utf8'));
 
-// Databases created before per-variant pricing need the column added in place.
-function hasColumn(table: string, column: string): boolean {
-  return db
-    .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
-    .all()
-    .some((r) => r.name === column);
-}
-if (!hasColumn('card_variants', 'price_usd')) {
-  db.exec('ALTER TABLE card_variants ADD COLUMN price_usd REAL');
-}
-
 export interface AddCardInput {
   pokemon_tcg_id: string;
   name: string;
@@ -32,20 +21,25 @@ export interface AddCardInput {
   image_url: string | null;
   rarity: string | null;
   card_number: string | null;
-  price_usd: number | null;
 }
 
 export interface VariantSelection {
   variantType: string;
   quantity: number;
-  priceUsd?: number | null;
 }
 
 export interface CollectionVariant {
   id: number;
   variant_type: string;
   quantity: number;
-  price_usd: number | null;
+}
+
+export interface GradedCopy {
+  id: number;
+  variant_type: string | null;
+  company: string;
+  grade: string;
+  cert_number: string | null;
 }
 
 export interface CollectionCard {
@@ -57,15 +51,39 @@ export interface CollectionCard {
   image_url: string | null;
   rarity: string | null;
   card_number: string | null;
-  price_usd: number | null;
   total_quantity: number;
   variants: CollectionVariant[];
+  graded: GradedCopy[];
+}
+
+export interface Want {
+  id: number;
+  pokemon_tcg_id: string;
+  name: string;
+  set_name: string | null;
+  series: string | null;
+  image_url: string | null;
+  rarity: string | null;
+  card_number: string | null;
+  variant_type: string | null;
+  added_at: string;
+}
+
+export interface AddWantInput extends AddCardInput {
+  variantType: string | null;
+}
+
+export interface AddGradedInput {
+  variantType: string | null;
+  company: string;
+  grade: string;
+  certNumber: string | null;
 }
 
 /** 'add' increments existing quantities (manual add); 'set' overwrites them so re-imports converge. */
 export type QuantityMode = 'add' | 'set';
 
-const selectCollection = db.query<Omit<CollectionCard, 'variants'>, []>(`
+const selectCollection = db.query<Omit<CollectionCard, 'variants' | 'graded'>, []>(`
   SELECT
     c.id,
     c.pokemon_tcg_id,
@@ -75,14 +93,7 @@ const selectCollection = db.query<Omit<CollectionCard, 'variants'>, []>(`
     c.image_url,
     c.rarity,
     c.card_number,
-    COALESCE(SUM(v.quantity), 0) AS total_quantity,
-    (
-      SELECT p.price_usd
-      FROM price_history p
-      WHERE p.card_id = c.id
-      ORDER BY p.fetched_at DESC, p.id DESC
-      LIMIT 1
-    ) AS price_usd
+    COALESCE(SUM(v.quantity), 0) AS total_quantity
   FROM cards c
   LEFT JOIN card_variants v ON v.card_id = c.id
   GROUP BY c.id
@@ -90,26 +101,43 @@ const selectCollection = db.query<Omit<CollectionCard, 'variants'>, []>(`
 `);
 
 const selectAllVariants = db.query<CollectionVariant & { card_id: number }, []>(
-  'SELECT id, card_id, variant_type, quantity, price_usd FROM card_variants ORDER BY id ASC'
+  'SELECT id, card_id, variant_type, quantity FROM card_variants ORDER BY id ASC'
+);
+
+const selectAllGraded = db.query<GradedCopy & { card_id: number }, []>(
+  `SELECT id, card_id, variant_type, company, grade, cert_number
+   FROM graded_cards ORDER BY id ASC`
 );
 
 export function getCollection(): CollectionCard[] {
   const cards = selectCollection.all();
   if (cards.length === 0) return [];
 
-  const byCard = new Map<number, CollectionVariant[]>();
+  const variantsByCard = new Map<number, CollectionVariant[]>();
   for (const v of selectAllVariants.all()) {
-    const list = byCard.get(v.card_id) ?? [];
-    list.push({
-      id: v.id,
-      variant_type: v.variant_type,
-      quantity: v.quantity,
-      price_usd: v.price_usd,
-    });
-    byCard.set(v.card_id, list);
+    const list = variantsByCard.get(v.card_id) ?? [];
+    list.push({ id: v.id, variant_type: v.variant_type, quantity: v.quantity });
+    variantsByCard.set(v.card_id, list);
   }
 
-  return cards.map((c) => ({ ...c, variants: byCard.get(c.id) ?? [] }));
+  const gradedByCard = new Map<number, GradedCopy[]>();
+  for (const g of selectAllGraded.all()) {
+    const list = gradedByCard.get(g.card_id) ?? [];
+    list.push({
+      id: g.id,
+      variant_type: g.variant_type,
+      company: g.company,
+      grade: g.grade,
+      cert_number: g.cert_number,
+    });
+    gradedByCard.set(g.card_id, list);
+  }
+
+  return cards.map((c) => ({
+    ...c,
+    variants: variantsByCard.get(c.id) ?? [],
+    graded: gradedByCard.get(c.id) ?? [],
+  }));
 }
 
 export function getCollectionTcgIds(): string[] {
@@ -131,19 +159,14 @@ const selectVariant = db.query<{ id: number; quantity: number }, [number, string
   'SELECT id, quantity FROM card_variants WHERE card_id = ? AND variant_type = ?'
 );
 const updateVariantQty = db.query('UPDATE card_variants SET quantity = ? WHERE id = ?');
-const updateVariantQtyAndPrice = db.query(
-  'UPDATE card_variants SET quantity = ?, price_usd = ? WHERE id = ?'
-);
 const insertVariant = db.query(
-  'INSERT INTO card_variants (card_id, variant_type, quantity, price_usd) VALUES (?, ?, ?, ?)'
+  'INSERT INTO card_variants (card_id, variant_type, quantity) VALUES (?, ?, ?)'
 );
-const insertPrice = db.query(
-  'INSERT INTO price_history (card_id, price_usd) VALUES (?, ?)'
+const deleteWantForVariant = db.query(
+  'DELETE FROM wants WHERE pokemon_tcg_id = ? AND variant_type = ?'
 );
-// One price point per card per day keeps repeated imports from bloating the chart in Phase 4.
-const hasPriceToday = db.query<{ n: number }, [number]>(
-  `SELECT COUNT(*) AS n FROM price_history
-   WHERE card_id = ? AND date(fetched_at) = date('now')`
+const deleteWantAnyVariant = db.query(
+  'DELETE FROM wants WHERE pokemon_tcg_id = ? AND variant_type IS NULL'
 );
 
 export const addCardWithVariants = db.transaction(
@@ -166,25 +189,23 @@ export const addCardWithVariants = db.transaction(
     if (!row) throw new Error(`Card not found after insert: ${input.pokemon_tcg_id}`);
     const cardId = row.id;
 
+    let added = false;
     for (const v of variants) {
       if (v.quantity <= 0) continue;
-      const price = v.priceUsd ?? null;
       const existing = selectVariant.get(cardId, v.variantType);
       if (existing) {
-        const next = mode === 'add' ? existing.quantity + v.quantity : v.quantity;
-        if (price != null) {
-          updateVariantQtyAndPrice.run(next, price, existing.id);
-        } else {
-          updateVariantQty.run(next, existing.id);
-        }
+        updateVariantQty.run(
+          mode === 'add' ? existing.quantity + v.quantity : v.quantity,
+          existing.id
+        );
       } else {
-        insertVariant.run(cardId, v.variantType, v.quantity, price);
+        insertVariant.run(cardId, v.variantType, v.quantity);
       }
+      // Acquiring a variant clears the want for it; a want for a different variant survives.
+      deleteWantForVariant.run(input.pokemon_tcg_id, v.variantType);
+      added = true;
     }
-
-    if (input.price_usd != null && hasPriceToday.get(cardId)!.n === 0) {
-      insertPrice.run(cardId, input.price_usd);
-    }
+    if (added) deleteWantAnyVariant.run(input.pokemon_tcg_id);
 
     return cardId;
   }
@@ -204,14 +225,24 @@ const selectVariantCardId = db.query<{ card_id: number }, [number]>(
 const countVariantsForCard = db.query<{ n: number }, [number]>(
   'SELECT COUNT(*) AS n FROM card_variants WHERE card_id = ?'
 );
+const countGradedForCard = db.query<{ n: number }, [number]>(
+  'SELECT COUNT(*) AS n FROM graded_cards WHERE card_id = ?'
+);
 
-/** Deleting a card's last variant also deletes the card, so it can't linger at quantity 0. */
+/** A card with nothing left — no variants and no slabs — can't linger at quantity 0. */
+function deleteCardIfEmpty(cardId: number): void {
+  if (
+    countVariantsForCard.get(cardId)!.n === 0 &&
+    countGradedForCard.get(cardId)!.n === 0
+  ) {
+    db.query('DELETE FROM cards WHERE id = ?').run(cardId);
+  }
+}
+
 export const removeVariant = db.transaction((variantId: number) => {
   const owner = selectVariantCardId.get(variantId);
   db.query('DELETE FROM card_variants WHERE id = ?').run(variantId);
-  if (owner && countVariantsForCard.get(owner.card_id)!.n === 0) {
-    db.query('DELETE FROM cards WHERE id = ?').run(owner.card_id);
-  }
+  if (owner) deleteCardIfEmpty(owner.card_id);
 });
 
 export const addVariantToCard = db.transaction(
@@ -220,65 +251,78 @@ export const addVariantToCard = db.transaction(
     if (existing) {
       updateVariantQty.run(existing.quantity + quantity, existing.id);
     } else {
-      insertVariant.run(cardId, variantType, quantity, null);
+      insertVariant.run(cardId, variantType, quantity);
     }
   }
 );
 
-export interface PricePoint {
-  day: string;
-  value: number;
+const insertGraded = db.query<{ id: number }, [number, string | null, string, string, string | null]>(
+  `INSERT INTO graded_cards (card_id, variant_type, company, grade, cert_number)
+   VALUES (?, ?, ?, ?, ?)
+   RETURNING id`
+);
+
+export function addGradedCopy(cardId: number, input: AddGradedInput): number {
+  const row = insertGraded.get(
+    cardId,
+    input.variantType,
+    input.company,
+    input.grade,
+    input.certNumber
+  );
+  if (!row) throw new Error(`Failed to add graded copy to card ${cardId}`);
+  return row.id;
 }
 
-const RANGE_MODIFIERS: Record<string, string> = {
-  '7D': '-7 days',
-  '3M': '-3 months',
-  '6M': '-6 months',
-};
+const selectGradedCardId = db.query<{ card_id: number }, [number]>(
+  'SELECT card_id FROM graded_cards WHERE id = ?'
+);
 
-/**
- * Collection value per day. Uses the same formula as the headline total — per-variant price
- * where known, that day's recorded card price otherwise — so the two always agree for today.
- * Quantities and variant prices are current, not historical, so only the card-level series
- * varies over time; days before a card was first priced omit it rather than backfilling.
- */
-export function getPriceHistory(range: string): PricePoint[] {
-  const modifier = RANGE_MODIFIERS[range];
-  if (!modifier) throw new Error(`Unknown range: ${range}`);
+export const removeGradedCopy = db.transaction((gradedId: number) => {
+  const owner = selectGradedCardId.get(gradedId);
+  db.query('DELETE FROM graded_cards WHERE id = ?').run(gradedId);
+  if (owner) deleteCardIfEmpty(owner.card_id);
+});
+
+const selectWants = db.query<Want, []>(
+  `SELECT id, pokemon_tcg_id, name, set_name, series, image_url, rarity, card_number,
+          variant_type, added_at
+   FROM wants ORDER BY added_at DESC, id DESC`
+);
+
+export function getWants(): Want[] {
+  return selectWants.all();
+}
+
+export function getWantTcgIds(): string[] {
   return db
-    .query<PricePoint, [string]>(
-      `SELECT date(p.fetched_at) AS day,
-              ROUND(SUM(v.quantity * COALESCE(v.price_usd, p.price_usd)), 2) AS value
-       FROM price_history p
-       JOIN card_variants v ON v.card_id = p.card_id
-       WHERE date(p.fetched_at) >= date('now', ?)
-       GROUP BY day
-       ORDER BY day ASC`
-    )
-    .all(modifier);
+    .query<{ pokemon_tcg_id: string }, []>('SELECT DISTINCT pokemon_tcg_id FROM wants')
+    .all()
+    .map((r) => r.pokemon_tcg_id);
 }
 
-export function getPricedCardIds(): { id: number; pokemon_tcg_id: string }[] {
-  return db
-    .query<{ id: number; pokemon_tcg_id: string }, []>(
-      'SELECT id, pokemon_tcg_id FROM cards'
-    )
-    .all();
+const insertWant = db.query(
+  `INSERT INTO wants
+     (pokemon_tcg_id, name, set_name, series, image_url, rarity, card_number, variant_type)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT DO NOTHING`
+);
+
+export function addWant(input: AddWantInput): void {
+  insertWant.run(
+    input.pokemon_tcg_id,
+    input.name,
+    input.set_name,
+    input.series,
+    input.image_url,
+    input.rarity,
+    input.card_number,
+    input.variantType
+  );
 }
 
-export function recordPrice(cardId: number, priceUsd: number): void {
-  if (hasPriceToday.get(cardId)!.n > 0) return;
-  insertPrice.run(cardId, priceUsd);
-}
-
-export function setVariantPrice(
-  cardId: number,
-  variantType: string,
-  priceUsd: number
-): void {
-  db.query(
-    'UPDATE card_variants SET price_usd = ? WHERE card_id = ? AND variant_type = ?'
-  ).run(priceUsd, cardId, variantType);
+export function removeWant(wantId: number): void {
+  db.query('DELETE FROM wants WHERE id = ?').run(wantId);
 }
 
 export interface ExportRow {
@@ -290,7 +334,6 @@ export interface ExportRow {
   card_number: string | null;
   variant_type: string;
   quantity: number;
-  price_usd: number | null;
   added_at: string;
 }
 
@@ -306,14 +349,7 @@ export function getExportRows(): ExportRow[] {
          c.card_number,
          c.added_at,
          v.variant_type,
-         v.quantity,
-         (
-           SELECT p.price_usd
-           FROM price_history p
-           WHERE p.card_id = c.id
-           ORDER BY p.fetched_at DESC, p.id DESC
-           LIMIT 1
-         ) AS price_usd
+         v.quantity
        FROM cards c
        INNER JOIN card_variants v ON v.card_id = c.id
        ORDER BY c.added_at DESC, v.id ASC`

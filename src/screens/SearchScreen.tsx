@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowLeft, ChevronRight, Layers, Plus, Search } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronRight,
+  Heart,
+  Layers,
+  Plus,
+  Search,
+} from 'lucide-react';
 import pokemonNames from '../../pokemon-names.json';
 import {
-  extractPriceUsd,
   getCardsInSet,
   searchCardsByName,
   searchSets,
@@ -11,10 +18,13 @@ import {
 } from '../api/pokemonTcg';
 import {
   addCardWithVariants,
+  addWant,
   getCollectionTcgIds,
+  getWantTcgIds,
   type VariantSelection,
 } from '../db/database';
 import VariantPickerSheet from '../components/VariantPickerSheet';
+import WantPickerSheet from '../components/WantPickerSheet';
 
 type Mode = 'pokemon' | 'set';
 
@@ -46,16 +56,12 @@ function fuzzyFilter(query: string, limit = 25): string[] {
   return scored.slice(0, limit).map((s) => s.name);
 }
 
-function formatPrice(price: number | null): string {
-  return price === null ? '—' : `$${price.toFixed(2)}`;
-}
-
 interface Props {
-  collectionVersion: number;
+  dataVersion: number;
   onCollectionChanged: () => void;
 }
 
-export default function SearchScreen({ collectionVersion, onCollectionChanged }: Props) {
+export default function SearchScreen({ dataVersion, onCollectionChanged }: Props) {
   const [mode, setMode] = useState<Mode>('pokemon');
   const [query, setQuery] = useState('');
   const [selectedName, setSelectedName] = useState<string | null>(null);
@@ -65,18 +71,24 @@ export default function SearchScreen({ collectionVersion, onCollectionChanged }:
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
+  const [wantedIds, setWantedIds] = useState<Set<string>>(new Set());
   const [pickerCard, setPickerCard] = useState<TcgCard | null>(null);
+  const [wantCard, setWantCard] = useState<TcgCard | null>(null);
 
-  // Re-reads whenever the collection changes elsewhere, so ADD/OWNED never goes stale.
+  // Re-reads whenever the collection or want list changes elsewhere, so the badges never go stale.
   useEffect(() => {
     let cancelled = false;
-    getCollectionTcgIds()
-      .then((ids) => !cancelled && setOwnedIds(ids))
+    Promise.all([getCollectionTcgIds(), getWantTcgIds()])
+      .then(([owned, wanted]) => {
+        if (cancelled) return;
+        setOwnedIds(owned);
+        setWantedIds(wanted);
+      })
       .catch((e) => !cancelled && setError(String(e)));
     return () => {
       cancelled = true;
     };
-  }, [collectionVersion]);
+  }, [dataVersion]);
 
   const nameSuggestions = useMemo(
     () => (mode === 'pokemon' ? fuzzyFilter(query) : []),
@@ -146,23 +158,35 @@ export default function SearchScreen({ collectionVersion, onCollectionChanged }:
     load(() => getCardsInSet(set.id));
   }
 
+  function cardInput(card: TcgCard) {
+    return {
+      pokemon_tcg_id: card.id,
+      name: card.name,
+      set_name: card.set.name,
+      series: card.set.series,
+      image_url: card.images.small,
+      rarity: card.rarity ?? null,
+      card_number: card.number,
+    };
+  }
+
   async function handleConfirmAdd(card: TcgCard, variants: VariantSelection[]) {
     try {
-      await addCardWithVariants(
-        {
-          pokemon_tcg_id: card.id,
-          name: card.name,
-          set_name: card.set.name,
-          series: card.set.series,
-          image_url: card.images.small,
-          rarity: card.rarity ?? null,
-          card_number: card.number,
-          price_usd: extractPriceUsd(card),
-        },
-        variants
-      );
+      await addCardWithVariants(cardInput(card), variants);
       setOwnedIds((prev) => new Set(prev).add(card.id));
       setPickerCard(null);
+      // Adding a card clears its matching want server-side, so let everything re-read.
+      onCollectionChanged();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleConfirmWant(card: TcgCard, variantType: string | null) {
+    try {
+      await addWant(cardInput(card), variantType);
+      setWantedIds((prev) => new Set(prev).add(card.id));
+      setWantCard(null);
       onCollectionChanged();
     } catch (e) {
       setError(String(e));
@@ -272,6 +296,7 @@ export default function SearchScreen({ collectionVersion, onCollectionChanged }:
           <div className="rows">
             {cards.map((card) => {
               const owned = ownedIds.has(card.id);
+              const wanted = wantedIds.has(card.id);
               return (
                 <div className="card-row" key={card.id}>
                   <img src={card.images.small} alt="" loading="lazy" />
@@ -281,15 +306,23 @@ export default function SearchScreen({ collectionVersion, onCollectionChanged }:
                       {card.set.name} · #{card.number}
                     </div>
                     {card.rarity && <span className="chip">{card.rarity}</span>}
-                    <div className="price">{formatPrice(extractPriceUsd(card))}</div>
                   </div>
-                  <button
-                    className={owned ? 'add-btn owned' : 'add-btn'}
-                    onClick={() => setPickerCard(card)}
-                  >
-                    <Plus size={14} />
-                    {owned ? 'OWNED' : 'ADD'}
-                  </button>
+                  <div className="card-row-actions">
+                    <button
+                      className={owned ? 'add-btn owned' : 'add-btn'}
+                      onClick={() => setPickerCard(card)}
+                    >
+                      <Plus size={14} />
+                      {owned ? 'OWNED' : 'ADD'}
+                    </button>
+                    <button
+                      className={wanted ? 'want-btn wanted' : 'want-btn'}
+                      onClick={() => setWantCard(card)}
+                    >
+                      <Heart size={14} />
+                      {wanted ? 'WANTED' : 'WANT'}
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -305,6 +338,14 @@ export default function SearchScreen({ collectionVersion, onCollectionChanged }:
           card={pickerCard}
           onClose={() => setPickerCard(null)}
           onConfirm={handleConfirmAdd}
+        />
+      )}
+
+      {wantCard && (
+        <WantPickerSheet
+          card={wantCard}
+          onClose={() => setWantCard(null)}
+          onConfirm={handleConfirmWant}
         />
       )}
     </>

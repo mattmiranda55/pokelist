@@ -33,6 +33,35 @@ CREATE TABLE IF NOT EXISTS tcg_cache (
   fetched_at TEXT DEFAULT (datetime('now'))
 );
 
+-- One row per slab. variant_type NULL means the slab's variant wasn't recorded.
+CREATE TABLE IF NOT EXISTS graded_cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  card_id INTEGER NOT NULL,
+  variant_type TEXT,
+  company TEXT NOT NULL,
+  grade TEXT NOT NULL,
+  cert_number TEXT,
+  added_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+);
+
+-- Wants are standalone: a wanted card is not in `cards` until it's actually acquired.
+CREATE TABLE IF NOT EXISTS wants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pokemon_tcg_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  set_name TEXT,
+  series TEXT,
+  image_url TEXT,
+  rarity TEXT,
+  card_number TEXT,
+  variant_type TEXT,
+  added_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_card_variants_card ON card_variants(card_id);
 CREATE INDEX IF NOT EXISTS idx_price_history_card ON price_history(card_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_card_variants_unique ON card_variants(card_id, variant_type);
+CREATE INDEX IF NOT EXISTS idx_graded_cards_card ON graded_cards(card_id);
+-- NULLs are distinct in a plain unique index, so "any variant" wants need the IFNULL.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wants_unique ON wants(pokemon_tcg_id, IFNULL(variant_type, ''));

@@ -7,8 +7,8 @@ const RETRY_DELAYS_MS = [250, 500, 1000, 2000];
 
 /** Card and set metadata is effectively immutable. */
 const TTL_METADATA_S = 7 * 24 * 60 * 60;
-/** Anything read for its price needs to go stale faster. */
-const TTL_PRICED_S = 24 * 60 * 60;
+/** Card lists carry which variants exist, which new printings can change. */
+const TTL_CARDS_S = 24 * 60 * 60;
 
 const selectCache = db.query<
   { response_json: string; age_s: number },
@@ -111,7 +111,7 @@ export function searchCardsByName(name: string) {
       orderBy: '-set.releaseDate,number',
       pageSize: '250',
     },
-    TTL_PRICED_S
+    TTL_CARDS_S
   );
 }
 
@@ -125,58 +125,24 @@ export function searchSets(query: string) {
 
 export async function getCardById(cardId: string): Promise<TcgCardLike | null> {
   const url = buildUrl(`/cards/${encodeURIComponent(cardId)}`, {});
-  const json = await getCached<{ data: TcgCardLike }>(url, TTL_PRICED_S, () =>
+  const json = await getCached<{ data: TcgCardLike }>(url, TTL_CARDS_S, () =>
     fetchWithRetry(url)
   );
   return json.data ?? null;
 }
 
+/** The `tcgplayer.prices` keys are the only reliable list of which variants a card exists in;
+ *  the bucket values are prices and go unread. */
 export interface TcgCardLike {
   id: string;
-  tcgplayer?: { prices?: Record<string, { market?: number | null } | undefined> };
-  cardmarket?: { prices?: { averageSellPrice?: number | null; trendPrice?: number | null } };
-}
-
-const VARIANT_ORDER = [
-  'normal',
-  'holofoil',
-  'reverseHolofoil',
-  '1stEditionHolofoil',
-  'unlimitedHolofoil',
-  '1stEdition',
-];
-
-/** First variant bucket with an actual market price wins; a null `normal` must not mask a real holofoil. */
-export function extractPriceUsd(card: TcgCardLike): number | null {
-  const prices = card.tcgplayer?.prices;
-  if (prices) {
-    for (const key of VARIANT_ORDER) {
-      const market = prices[key]?.market;
-      if (market != null) return market;
-    }
-    for (const bucket of Object.values(prices)) {
-      if (bucket?.market != null) return bucket.market;
-    }
-  }
-  const cm = card.cardmarket?.prices;
-  if (cm?.averageSellPrice != null) return cm.averageSellPrice;
-  if (cm?.trendPrice != null) return cm.trendPrice;
-  return null;
-}
-
-export function variantPrices(card: TcgCardLike): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const [type, bucket] of Object.entries(card.tcgplayer?.prices ?? {})) {
-    if (bucket?.market != null) out[type] = bucket.market;
-  }
-  return out;
+  tcgplayer?: { prices?: Record<string, unknown> };
 }
 
 export function getCardsInSet(setId: string) {
   return getData<unknown[]>(
     '/cards',
     { q: `set.id:${setId}`, orderBy: 'number', pageSize: '250' },
-    TTL_PRICED_S
+    TTL_CARDS_S
   );
 }
 
@@ -192,7 +158,7 @@ export async function findCardForImport(input: {
   const exact = await getData<unknown[]>(
     '/cards',
     { q: clauses.join(' '), pageSize: '5' },
-    TTL_PRICED_S
+    TTL_CARDS_S
   );
   if (exact.length > 0) return exact[0];
 
@@ -203,7 +169,7 @@ export async function findCardForImport(input: {
         q: `name:"${escapeLucene(input.name)}" set.name:"${escapeLucene(input.set)}"`,
         pageSize: '5',
       },
-      TTL_PRICED_S
+      TTL_CARDS_S
     );
     if (withoutNumber.length > 0) return withoutNumber[0];
   }
@@ -212,7 +178,7 @@ export async function findCardForImport(input: {
     const nameOnly = await getData<unknown[]>(
       '/cards',
       { q: `name:"${escapeLucene(input.name)}"`, pageSize: '5' },
-      TTL_PRICED_S
+      TTL_CARDS_S
     );
     if (nameOnly.length > 0) return nameOnly[0];
   }

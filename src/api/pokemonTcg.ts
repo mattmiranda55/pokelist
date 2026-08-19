@@ -11,18 +11,6 @@ export interface TcgCardSet {
   series: string;
 }
 
-interface TcgPlayerPriceBucket {
-  market?: number | null;
-}
-
-interface TcgPlayerPrices {
-  normal?: TcgPlayerPriceBucket;
-  holofoil?: TcgPlayerPriceBucket;
-  reverseHolofoil?: TcgPlayerPriceBucket;
-  '1stEditionHolofoil'?: TcgPlayerPriceBucket;
-  unlimitedHolofoil?: TcgPlayerPriceBucket;
-}
-
 export interface TcgCard {
   id: string;
   name: string;
@@ -30,14 +18,10 @@ export interface TcgCard {
   rarity?: string;
   images: TcgCardImage;
   set: TcgCardSet;
+  // Upstream only enumerates a card's variants as the keys of its price map; the bucket
+  // values are prices and go unread.
   tcgplayer?: {
-    prices?: TcgPlayerPrices;
-  };
-  cardmarket?: {
-    prices?: {
-      averageSellPrice?: number | null;
-      trendPrice?: number | null;
-    };
+    prices?: Record<string, unknown>;
   };
 }
 
@@ -48,26 +32,6 @@ export interface TcgSet {
   releaseDate: string;
   images: { symbol: string; logo: string };
   total: number;
-}
-
-/** First bucket with an actual market price wins; a present-but-null `normal` must not mask a real holofoil. */
-export function extractPriceUsd(card: TcgCard): number | null {
-  const prices = card.tcgplayer?.prices as
-    | Record<string, { market?: number | null } | undefined>
-    | undefined;
-  if (prices) {
-    for (const key of VARIANT_ORDER) {
-      const market = prices[key]?.market;
-      if (market != null) return market;
-    }
-    for (const bucket of Object.values(prices)) {
-      if (bucket?.market != null) return bucket.market;
-    }
-  }
-  const cm = card.cardmarket?.prices;
-  if (cm?.averageSellPrice != null) return cm.averageSellPrice;
-  if (cm?.trendPrice != null) return cm.trendPrice;
-  return null;
 }
 
 export const VARIANT_LABELS: Record<string, string> = {
@@ -97,27 +61,15 @@ export function variantLabel(variantType: string): string {
 export interface AvailableVariant {
   type: string;
   label: string;
-  priceUsd: number | null;
 }
 
 export function getAvailableVariants(card: TcgCard): AvailableVariant[] {
-  const prices = card.tcgplayer?.prices as
-    | Record<string, { market?: number | null } | undefined>
-    | undefined;
-  const variants: AvailableVariant[] = [];
-
-  if (prices) {
-    for (const [type, bucket] of Object.entries(prices)) {
-      variants.push({
-        type,
-        label: variantLabel(type),
-        priceUsd: bucket?.market ?? null,
-      });
-    }
-  }
+  const variants: AvailableVariant[] = Object.keys(card.tcgplayer?.prices ?? {}).map(
+    (type) => ({ type, label: variantLabel(type) })
+  );
 
   if (variants.length === 0) {
-    variants.push({ type: 'normal', label: 'Normal', priceUsd: extractPriceUsd(card) });
+    variants.push({ type: 'normal', label: 'Normal' });
   }
 
   variants.sort((a, b) => {

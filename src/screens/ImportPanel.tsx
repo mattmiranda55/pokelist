@@ -20,7 +20,7 @@ import {
   type ColumnMap,
   type ParsedCsv,
 } from '../import/csv';
-import { extractPriceUsd, findCardForImport } from '../api/pokemonTcg';
+import { findCardForImport } from '../api/pokemonTcg';
 import { addCardWithVariants } from '../db/database';
 
 /** 'no_match' means the API had no such card; 'fetch_error' means the lookup itself failed. */
@@ -112,7 +112,6 @@ export default function ImportPanel({ onClose }: { onClose: () => void }) {
                 image_url: card.images.small,
                 rarity: card.rarity ?? null,
                 card_number: card.number,
-                price_usd: extractPriceUsd(card),
               },
               [{ variantType: extractVariantFromName(rawName), quantity }],
               // Idempotent: re-running the same CSV converges instead of doubling quantities.

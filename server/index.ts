@@ -2,15 +2,22 @@ import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import {
   addCardWithVariants,
+  addGradedCopy,
   addVariantToCard,
+  addWant,
   getCollection,
   getCollectionTcgIds,
   getExportRows,
-  getPriceHistory,
+  getWants,
+  getWantTcgIds,
   removeCard,
+  removeGradedCopy,
   removeVariant,
+  removeWant,
   setVariantQuantity,
   type AddCardInput,
+  type AddGradedInput,
+  type AddWantInput,
   type ExportRow,
   type QuantityMode,
   type VariantSelection,
@@ -22,7 +29,6 @@ import {
   searchCardsByName,
   searchSets,
 } from './tcg';
-import { refreshPrices, startPriceRefreshSchedule } from './priceRefresh';
 
 const PORT = Number(process.env.PORT ?? 3000);
 
@@ -84,6 +90,43 @@ app.delete('/api/variants/:id', (c) => {
   return c.json({ ok: true });
 });
 
+app.post('/api/cards/:id/graded', async (c) => {
+  const body = (await c.req.json()) as AddGradedInput;
+  if (!body.company || !body.grade) {
+    return c.json({ error: 'company and grade are required' }, 400);
+  }
+  const id = addGradedCopy(intParam(c.req.param('id'), 'card id'), {
+    variantType: body.variantType ?? null,
+    company: body.company,
+    grade: body.grade,
+    certNumber: body.certNumber || null,
+  });
+  return c.json({ id });
+});
+
+app.delete('/api/graded/:id', (c) => {
+  removeGradedCopy(intParam(c.req.param('id'), 'graded id'));
+  return c.json({ ok: true });
+});
+
+app.get('/api/wants', (c) => c.json(getWants()));
+
+app.get('/api/wants/ids', (c) => c.json(getWantTcgIds()));
+
+app.post('/api/wants', async (c) => {
+  const body = (await c.req.json()) as AddWantInput;
+  if (!body.pokemon_tcg_id || !body.name) {
+    return c.json({ error: 'pokemon_tcg_id and name are required' }, 400);
+  }
+  addWant({ ...body, variantType: body.variantType ?? null });
+  return c.json({ ok: true });
+});
+
+app.delete('/api/wants/:id', (c) => {
+  removeWant(intParam(c.req.param('id'), 'want id'));
+  return c.json({ ok: true });
+});
+
 function escapeCell(value: string): string {
   if (/[,"\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
@@ -107,7 +150,6 @@ function rowsToCsv(rows: ExportRow[]): string {
     'Rarity',
     'Variant',
     'Quantity',
-    'Price (USD)',
     'TCG ID',
     'Added At',
   ];
@@ -122,7 +164,6 @@ function rowsToCsv(rows: ExportRow[]): string {
         escapeCell(r.rarity ?? ''),
         escapeCell(VARIANT_LABELS[r.variant_type] ?? r.variant_type),
         String(r.quantity),
-        r.price_usd != null ? r.price_usd.toFixed(2) : '',
         escapeCell(r.pokemon_tcg_id),
         escapeCell(r.added_at),
       ].join(',')
@@ -141,14 +182,6 @@ app.get('/api/export.csv', (c) => {
     },
   });
 });
-
-app.get('/api/price-history', (c) => {
-  const range = c.req.query('range') ?? '7D';
-  return c.json(getPriceHistory(range));
-});
-
-// Manual trigger; the schedule also runs this daily.
-app.post('/api/price-refresh', async (c) => c.json(await refreshPrices()));
 
 app.get('/api/tcg/cards', async (c) => {
   const name = c.req.query('name');
@@ -184,10 +217,6 @@ app.get('/api/tcg/match', async (c) => {
 if (process.env.NODE_ENV === 'production') {
   app.use('/*', serveStatic({ root: './dist' }));
   app.get('*', serveStatic({ path: './dist/index.html' }));
-}
-
-if (process.env.DISABLE_PRICE_REFRESH !== '1') {
-  startPriceRefreshSchedule();
 }
 
 console.log(`pokelist api on http://localhost:${PORT}`);

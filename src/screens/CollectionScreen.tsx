@@ -1,42 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  CloudOff,
-  Import,
-  Info,
-  Layers,
-  LineChart,
-  TrendingUp,
-  Upload,
-  Zap,
-} from 'lucide-react';
+import { Award, CloudOff, Import, Info, Layers, Upload } from 'lucide-react';
 import { getCollection, type CollectionCard } from '../db/database';
 import { exportCollectionToCsv } from '../export/exportCsv';
-import { getPriceHistory, type TimeRange } from '../api/priceHistory';
-import PriceChart, { type PricePoint } from '../components/PriceChart';
 import CardDetailModal from '../components/CardDetailModal';
 import ImportPanel from './ImportPanel';
 
 interface Props {
+  dataVersion: number;
   onHeaderActions: (node: React.ReactNode) => void;
   onCollectionChanged: () => void;
 }
 
-function formatPrice(price: number | null): string {
-  return price === null ? '—' : `$${price.toFixed(2)}`;
-}
-
-/** Per-variant price where recorded; the card-level price stands in for older rows. */
-function cardValue(card: CollectionCard): number {
-  return card.variants.reduce(
-    (sum, v) => sum + v.quantity * (v.price_usd ?? card.price_usd ?? 0),
-    0
-  );
-}
-
-export default function CollectionScreen({ onHeaderActions, onCollectionChanged }: Props) {
+export default function CollectionScreen({
+  dataVersion,
+  onHeaderActions,
+  onCollectionChanged,
+}: Props) {
   const [cards, setCards] = useState<CollectionCard[]>([]);
-  const [range, setRange] = useState<TimeRange>('7D');
-  const [history, setHistory] = useState<PricePoint[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -55,17 +35,7 @@ export default function CollectionScreen({ onHeaderActions, onCollectionChanged 
 
   useEffect(() => {
     refetch();
-  }, [refetch]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getPriceHistory(range)
-      .then((p) => !cancelled && setHistory(p))
-      .catch(() => !cancelled && setHistory([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [range, cards.length]);
+  }, [refetch, dataVersion]);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -100,13 +70,6 @@ export default function CollectionScreen({ onHeaderActions, onCollectionChanged 
     return () => onHeaderActions(null);
   }, [onHeaderActions, handleExport, exporting, cards.length]);
 
-  const totalValue = cards.reduce((sum, c) => sum + cardValue(c), 0);
-  const totalCards = cards.reduce((sum, c) => sum + c.total_quantity, 0);
-  const topCards = cards
-    .filter((c) => c.price_usd !== null)
-    .sort((a, b) => (b.price_usd ?? 0) - (a.price_usd ?? 0))
-    .slice(0, 5);
-
   const selected = selectedId === null ? null : cards.find((c) => c.id === selectedId) ?? null;
 
   function changed() {
@@ -129,68 +92,7 @@ export default function CollectionScreen({ onHeaderActions, onCollectionChanged 
         </button>
       )}
 
-      <div className="hero-row">
-        <div className="stat-card">
-          <div className="stat-label">TOTAL VALUE</div>
-          <div className="stat-value">${totalValue.toFixed(2)}</div>
-          <div className="stat-footer">
-            <TrendingUp size={12} color="var(--success)" />
-            USD
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">CARDS OWNED</div>
-          <div className="stat-value">{totalCards}</div>
-          <div className="stat-footer">
-            <Layers size={12} color="var(--cyan)" />
-            {cards.length} UNIQUE
-          </div>
-        </div>
-      </div>
-
-      <div className="chart-panel">
-        <div className="chart-head">
-          <LineChart size={18} color="var(--primary)" />
-          PRICE HISTORY
-        </div>
-        <PriceChart points={history} />
-        <div className="range-row">
-          {(['7D', '3M', '6M'] as TimeRange[]).map((r) => (
-            <button
-              key={r}
-              className={r === range ? 'active' : undefined}
-              onClick={() => setRange(r)}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {topCards.length > 0 && (
-        <>
-          <div className="section-header">
-            <TrendingUp size={16} color="var(--accent)" />
-            TOP CARDS
-          </div>
-          <div className="top-row">
-            {topCards.map((c, i) => (
-              <div className="top-tile" key={c.id}>
-                <span className="rank-badge">#{i + 1}</span>
-                {c.image_url ? (
-                  <img className="top-img" src={c.image_url} alt="" loading="lazy" />
-                ) : (
-                  <div className="top-img" />
-                )}
-                <div className="tile-name">{c.name}</div>
-                <div className="tile-price">{formatPrice(c.price_usd)}</div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      <div className="section-header">
+      <div className="section-header" style={{ marginTop: 'var(--s-lg)' }}>
         <Layers size={16} color="var(--cyan)" />
         COLLECTION
       </div>
@@ -211,6 +113,12 @@ export default function CollectionScreen({ onHeaderActions, onCollectionChanged 
           {cards.map((c) => (
             <button className="tile" key={c.id} onClick={() => setSelectedId(c.id)}>
               {c.total_quantity > 1 && <span className="qty-badge">×{c.total_quantity}</span>}
+              {c.graded.length > 0 && (
+                <span className="graded-badge">
+                  <Award size={11} />
+                  {c.graded.length}
+                </span>
+              )}
               {c.image_url ? (
                 <img className="tile-img" src={c.image_url} alt="" loading="lazy" />
               ) : (
@@ -219,9 +127,10 @@ export default function CollectionScreen({ onHeaderActions, onCollectionChanged 
                 </div>
               )}
               <div className="tile-name">{c.name}</div>
-              <div className="tile-price">
-                <Zap size={12} />
-                {formatPrice(c.price_usd)}
+              <div className="tile-meta">
+                {[c.set_name, c.card_number ? `#${c.card_number}` : null]
+                  .filter(Boolean)
+                  .join(' · ') || '—'}
               </div>
             </button>
           ))}

@@ -9,10 +9,6 @@ interface Props {
   onConfirm: (card: TcgCard, variants: VariantSelection[]) => Promise<void>;
 }
 
-function formatPrice(price: number | null): string {
-  return price === null ? '—' : `$${price.toFixed(2)}`;
-}
-
 export default function VariantPickerSheet({ card, onClose, onConfirm }: Props) {
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -28,14 +24,9 @@ export default function VariantPickerSheet({ card, onClose, onConfirm }: Props) 
     if (totalToAdd === 0 || submitting) return;
     setSubmitting(true);
     try {
-      const priceByType = new Map(variants.map((v) => [v.type, v.priceUsd]));
       const selections: VariantSelection[] = Object.entries(quantities)
         .filter(([, q]) => q > 0)
-        .map(([variantType, quantity]) => ({
-          variantType,
-          quantity,
-          priceUsd: priceByType.get(variantType) ?? null,
-        }));
+        .map(([variantType, quantity]) => ({ variantType, quantity }));
       await onConfirm(card, selections);
     } finally {
       setSubmitting(false);
@@ -73,10 +64,7 @@ export default function VariantPickerSheet({ card, onClose, onConfirm }: Props) 
             const qty = quantities[v.type] ?? 0;
             return (
               <div className="variant-row" key={v.type}>
-                <div className="variant-label">
-                  {v.label}
-                  <div className="variant-price">{formatPrice(v.priceUsd)}</div>
-                </div>
+                <div className="variant-label">{v.label}</div>
                 <div className="stepper">
                   <button onClick={() => bump(v.type, -1)} disabled={qty === 0} aria-label="Fewer">
                     <Minus size={14} />
